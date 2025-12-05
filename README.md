@@ -3,6 +3,7 @@
 Final version of a flutter app that works with Arduino via Bluetooth communication
 
 The Arduino device is connected to a DHT22 sensor, a sg90 servomotor, two LEDs and an LCD display. An HC-05 module is required for bluetooth connection.
+This final version integrates unit testing and quality assurance techniques to provide maximum product quality.
 
 ## IMPORTANT FOR BLUETOOTH SERIAL SET-UP
 
@@ -21,3 +22,4 @@ Look for the <manifest..> tag, and if you see a line " package="io.github.edufol
 Everything should be just fine now
 
 ## IMPORTANT FOR ARDUINO
+You'll need to download the 'DHT sensor library' from Adafruit and the 'ArduinoJson' from Benoit Blanchon in the Arduino IDE.
