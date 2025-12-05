@@ -1,17 +1,23 @@
-# SmartHome Controller Device
+# Smart Home Controller
 
-An IoT Flutter project.
+Final version of a flutter app that works with Arduino via Bluetooth communication
 
-## Getting Started
+The Arduino device is connected to a DHT22 sensor, a sg90 servomotor, two LEDs and an LCD display. An HC-05 module is required for bluetooth connection.
 
-This project is a the final version of the flutter Smart Home Automation Controller, integrating quality assurance and testing techniques.
+## IMPORTANT FOR BLUETOOTH SERIAL SET-UP
 
-A few resources you'll need for setup:
+It's vital to configure the proper Android permissions to use Bluetooth communication tools and protocols.
+The AndroidManifest.xml in the Android folder of this repository should have everything correctly, but if an exception occurs
+with flutter_bluetooth_serial, a possible solution is to add the namespace configuration manually to the package.
 
-- 
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+First locate the bluetooth serial package in your storage, then follow => flutter_bluetooth_serial-0.4.0\android\build.gradle.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Then find the android {...} and add " namespace 'flutter.bluetooth.serial' " at the beginning without changing anything else.
 
+In the same package, go to => android\src\main\AndroidManifest.xml
+
+Look for the <manifest..> tag, and if you see a line " package="io.github.edufolly.flutterbluetoothserial" ", delete it and don't change anything else.
+
+Everything should be just fine now
+
+## IMPORTANT FOR ARDUINO
