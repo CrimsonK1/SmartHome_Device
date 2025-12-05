@@ -1,0 +1,259 @@
+//Copy this code into the Arduino UNO board
+#include <SoftwareSerial.h>
+#include <Servo.h>
+#include <DHT.h>
+#include <ArduinoJson.h> //For JSON data transfer
+#include <Wire.h> //For LCD display control
+#include <LiquidCrystal_I2C.h> //For LCD display control
+
+// --- PIN CONFIGURATION ---
+// Bluetooth module
+#define BT_RX_PIN 10
+#define BT_TX_PIN 11
+SoftwareSerial btSerial(BT_RX_PIN, BT_TX_PIN);
+
+// LEDs
+#define LED1_PIN 7
+#define LED2_PIN 8
+
+// Servos
+#define SERVO1_PIN 5
+#define SERVO2_PIN 6
+Servo servo1;
+Servo servo2;
+
+// Sensor DHT22
+#define DHT_PIN 4
+#define DHT_TYPE DHT22
+DHT dht(DHT_PIN, DHT_TYPE);
+
+//LCD display
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// --- GLOBAL VARIABLES ---
+String incomingJsonString; //For received JSON data
+bool isLcdOn = false; //For LCD state indication
+String currentProfile = "none"; //Profile configuration selection
+bool automationActive = false; 
+unsigned long previousLedMillis = 0;
+long ledInterval = 8000; //For LED blink during automation
+unsigned long previousSensorMillis = 0;
+long sensorInterval = 15000; //For sensor reading during automation
+
+void setup() { //System initialization
+  Serial.begin(9600);
+  Serial.println("Automation system initialized.");
+  btSerial.begin(9600);
+  dht.begin();
+  
+  //LEDs
+  pinMode(LED1_PIN, OUTPUT);
+  pinMode(LED2_PIN, OUTPUT);
+  
+  //Servos
+  servo1.attach(SERVO1_PIN);
+  servo2.attach(SERVO2_PIN);
+  servo1.write(0);
+  servo2.write(0);
+
+  // LCD
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("System Ready");
+  delay(1500);
+  lcd.clear();
+  lcd.noBacklight();
+}
+
+void loop() { //Reception of JSON data from app
+  if (btSerial.available() > 0) {
+    incomingJsonString = btSerial.readStringUntil('\n');
+
+    Serial.print("JSON Received: ");
+    Serial.println(incomingJsonString);
+
+    StaticJsonDocument<256> doc;
+    DeserializationError error = deserializeJson(doc, incomingJsonString);
+
+    if (error) { //If the data cannot be interpreted, show an error and ignore it
+      Serial.print("deserializeJson() failed: ");
+      Serial.println(error.c_str());
+      return;
+    }
+
+    const char* action = doc["action"]; //According to JSON command,indicates what to do
+    if (strcmp(action, "start_profile") != 0) {
+      automationActive = false;
+      Serial.println("Automation stopped due to manual command.");
+    }
+
+    if (strcmp(action, "read_sensors") == 0) { 
+      readAndSendSensorData();
+    }
+    else if (strcmp(action, "on") == 0 || strcmp(action, "off") == 0) {
+      controlLed(doc);
+    }
+    else if (strcmp(action, "angle") == 0) {
+      controlServo(doc);
+    }
+    else if (strcmp(action, "toggle_lcd") == 0) {
+      handleLcdToggle();
+    }
+    else if (strcmp(action, "start_profile") == 0) { //Start automation settings according to profile
+      const char* profile = doc["profile"];
+      startProfileAutomation(profile);
+    } 
+    else if (strcmp(action, "stop_profile") == 0) { //Stop automation
+      automationActive = false;
+      Serial.println("Command to stop automation received.");
+    }
+  } 
+
+
+  // Automation logic for asynchronic tasks
+  if (automationActive) {
+    unsigned long currentMillis = millis();
+    
+    // LED automation
+    if (currentMillis - previousLedMillis >= ledInterval) {
+      previousLedMillis = currentMillis;
+      digitalWrite(LED1_PIN, !digitalRead(LED1_PIN));
+      digitalWrite(LED2_PIN, !digitalRead(LED2_PIN));
+      Serial.println("LEDs blinking due to automation.");
+    }
+
+    // Sensor automation
+    if (currentMillis - previousSensorMillis >= sensorInterval) {
+      previousSensorMillis = currentMillis;
+      Serial.println("Sensors reading due to automation.");
+      
+      readAndSendSensorData(); // Send data to the app
+      
+      if (isLcdOn) {
+        updateLcdDisplay(); 
+      }
+    }
+  }
+} 
+
+
+// --- AUXILIAR FUNCTIONS ---
+
+//Settings according to each profile
+void startProfileAutomation(const char* profile) { 
+  currentProfile = String(profile);
+  Serial.print("Initializing automation for profile: ");
+  Serial.println(currentProfile);
+
+  if (currentProfile == "factoryDefault") {
+    ledInterval = 8000;
+    sensorInterval = 15000;
+  } else if (currentProfile == "mama") {
+    ledInterval = 2000;
+    sensorInterval = 10000;
+  } else if (currentProfile == "papa") {
+    ledInterval = 10000;
+    sensorInterval = 20000;
+  }
+
+  automationActive = true;
+  previousLedMillis = millis();
+  previousSensorMillis = millis(); // Reset counters
+}
+
+//For LED toggle
+void controlLed(const JsonDocument& doc) { 
+  const char* deviceId = doc["device"];
+  const char* action = doc["action"];
+
+  int ledPin = -1;
+  if (strcmp(deviceId, "led1") == 0) ledPin = LED1_PIN;
+  if (strcmp(deviceId, "led2") == 0) ledPin = LED2_PIN;
+
+  if (ledPin != -1) {
+    if (strcmp(action, "on") == 0) {
+      digitalWrite(ledPin, HIGH);
+      Serial.println("LED ON.");
+    } else {
+      digitalWrite(ledPin, LOW);
+      Serial.println("LED OFF.");
+    }
+  }
+}
+
+//For servo control
+void controlServo(const JsonDocument& doc) {
+  const char* deviceId = doc["device"];
+  int angle = doc["value"];
+
+  if (strcmp(deviceId, "servo1") == 0) {
+    servo1.write(angle);
+    Serial.print("Servo 1 moved to ");
+    Serial.println(angle);
+  }
+  if (strcmp(deviceId, "servo2") == 0) {
+    servo2.write(angle);
+    Serial.print("Servo 2 moved to ");
+    Serial.println(angle);
+  }
+}
+
+//For sensor control
+void readAndSendSensorData() {
+  float humidity = dht.readHumidity();
+  float temperature = dht.readTemperature();
+
+  if (isnan(humidity) || isnan(temperature)) {
+    Serial.println("Error readin DTH sensor!");
+    return;
+  }
+
+  StaticJsonDocument<128> responseDoc;
+  responseDoc["temperature"] = temperature;
+  responseDoc["humidity"] = humidity;
+
+  serializeJson(responseDoc, btSerial);
+  btSerial.println();
+
+  Serial.print("JSON Sent: ");
+  serializeJson(responseDoc, Serial);
+  Serial.println();
+}
+
+// For LCD control
+void handleLcdToggle() {
+  isLcdOn = !isLcdOn;
+
+  if (isLcdOn) {
+    Serial.println("LCD activated/updated.");
+    lcd.backlight(); 
+    updateLcdDisplay(); 
+  } else {
+    Serial.println("LCD deactivated.");
+    lcd.clear(); 
+    lcd.noBacklight(); 
+  }
+}
+
+// For data display on LCD
+void updateLcdDisplay() {
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+  if (isnan(h) || isnan(t)) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Sensor error");
+    return;
+  }
+  
+  lcd.clear();
+  lcd.setCursor(0, 0); 
+  // Formato: "Temp: 16.0C"
+  lcd.print("Temp: " + String(t, 1) + "C"); 
+  
+  lcd.setCursor(0, 1); 
+  // Formato: "Hum:  43.0%"
+  lcd.print("Hum:  " + String(h, 1) + "%");
+}
